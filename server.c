@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+
 #include "messages.h"
+
 
 
 #include <netdb.h>
@@ -10,9 +12,26 @@
 
 #include <string.h>
 
+// void hashe(){
+//    uint64_t ans = (uint64_t) 1;
+//    ans = (uint64_t) htole64(ans);
+//    const uint64_t *num = 1;
+   
+//    // Buffer to store the SHA-256 digest
+//    unsigned char hash[SHA256_DIGEST_LENGTH];
+   
+//    // Compute the SHA-256 hash
+//    SHA256((uint64_t*)num, sizeof(uint64_t), hash);
+   
+//    // Print the resulting hash in hexadecimal
+//    printf("SHA-256 hash of \"%s\":\n", hash);
+// }
+
 void doprocessing (int sock) {
    int n;
-   uint8_t buffer[256];
+   // uint8_t buffer[256];
+   // PACKET_REQUEST_SIZE
+   unsigned char buffer[256];
    bzero(buffer,256);
    n = read(sock,buffer,255);
    
@@ -25,28 +44,73 @@ void doprocessing (int sock) {
    //  uint64_t value =  htobe64(uint64_t host_64bits);
 
   
+   // htobe64, htole64, be64toh, and le64toh
+   uint8_t value[32];
+   printf("here is the hash: \n");
+   memcpy(&value, &buffer[PACKET_REQUEST_HASH_OFFSET ], sizeof(uint8_t)*32);
+      
+   uint64_t val[4];  
+   for (size_t i = 0; i < 4; i++)
+   {
+      memcpy(&val[i], &buffer[PACKET_REQUEST_HASH_OFFSET + i ], sizeof(uint64_t));
+      printf("%"PRIu64 "\n", val[i] );  
+   }
+printf(" \n");
+printf(" \n");   
+  
 
-   uint64_t value;
-   memcpy(&value, &buffer[PACKET_REQUEST_HASH_OFFSET ], sizeof(uint64_t));
-   value =  htobe64(value);
-   printf("here is the number: %" PRIu64 "\n",value);
 
+
+   for (size_t i = 0; i < 32; i++)
+   {
+      
+      printf("%c", value[i]);
+   // value[i] = htole64(value[i]);
+   // printf("%"PRIu8, value[i] );
+   }
+    printf(" \n");
+   // printf("%"PRIu64, value );
+   // printf("value is %ld", value);
+   printf("value array is: %ld \n", sizeof(value));
+
+
+   // for (size_t i = 0; i < 32; i++)
+   // {
+      
+   // memcpy(&value[i], &buffer[PACKET_REQUEST_HASH_OFFSET + i ], sizeof(uint8_t));
+   // // value[i] = htole64(value[i]);
+   // // printf("%"PRIu8, value[i] );
+   // }
+   //  printf(" \n");
+   // printf("%"PRIu64, value );
+
+   // // value =  htobe64(value);
+  
    uint64_t start;
    memcpy(&start, &buffer[PACKET_REQUEST_START_OFFSET ], sizeof(uint64_t));
    start =  htobe64(start) - 1 ;
    printf("Start: %" PRIu64 "\n",start);
 
-
    uint64_t end;
    memcpy(&end, &buffer[PACKET_REQUEST_END_OFFSET ], sizeof(uint64_t));
    end =  htobe64(end) - 1;
    printf("End: %" PRIu64 "\n",end);
+   
+   uint8_t prio;
+   memcpy(&prio, &buffer[PACKET_REQUEST_PRIO_OFFSET ], sizeof(uint8_t));
+   // prio =  htobe64(prio) - 1;
+   printf("Prio: %" PRIu8 "\n",prio);
 
    
    // uint8_t intial_number_sent;
    // intial_number_sent = buffer[]  
    //printf
-   n = write(sock,"I got your message",18);
+
+   uint64_t ans = (uint64_t) 1;
+   
+   ans = htobe64(ans); 
+   
+   n = write(sock,&ans,PACKET_RESPONSE_SIZE);
    
    if (n < 0) {
       perror("ERROR writing to socket");
@@ -60,7 +124,7 @@ int main( int argc, char *argv[] ) {
    char buffer[PACKET_REQUEST_SIZE];
    struct sockaddr_in serv_addr, cli_addr;
    int n, pid;
-   
+   // hashe();
    /* First call to socket() function */
    sockfd = socket(AF_INET, SOCK_STREAM, 0);
    
