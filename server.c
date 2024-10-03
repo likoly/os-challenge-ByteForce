@@ -1,185 +1,199 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
-
-
-#include "messages.h"
-
-
-
-#include <netdb.h>
 #include <netinet/in.h>
-
+#include <openssl/sha.h>
+#include <pthread.h>
+#include "messages.h"
 #include <string.h>
 
-// void hashe(){
-//    uint64_t ans = (uint64_t) 1;
-//    ans = (uint64_t) htole64(ans);
-//    const uint64_t *num = 1;
-   
-//    // Buffer to store the SHA-256 digest
-//    unsigned char hash[SHA256_DIGEST_LENGTH];
-   
-//    // Compute the SHA-256 hash
-//    SHA256((uint64_t*)num, sizeof(uint64_t), hash);
-   
-//    // Print the resulting hash in hexadecimal
-//    printf("SHA-256 hash of \"%s\":\n", hash);
-// }
+void *doprocessing(void *sock);
+uint64_t bruteForce(unsigned char target_hash[], uint64_t start, uint64_t end);
 
-void doprocessing (int sock) {
-   int n;
-   // uint8_t buffer[256];
-   // PACKET_REQUEST_SIZE
-   unsigned char buffer[256];
-   bzero(buffer,256);
-   n = read(sock,buffer,255);
-   
-   if (n < 0) {
-      perror("ERROR reading from socket");
-      exit(1);
-   }
-   
-   printf("Here is the message: %s\n",buffer);
-   //  uint64_t value =  htobe64(uint64_t host_64bits);
+// Structure to hold cached hash data
+typedef struct
+{
+    uint64_t number;
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+} HashCacheEntry;
 
-  
-   // htobe64, htole64, be64toh, and le64toh
-   uint8_t value[32];
-   printf("here is the hash: \n");
-   memcpy(&value, &buffer[PACKET_REQUEST_HASH_OFFSET ], sizeof(uint8_t)*32);
-      
-   uint64_t val[4];  
-   for (size_t i = 0; i < 4; i++)
-   {
-      memcpy(&val[i], &buffer[PACKET_REQUEST_HASH_OFFSET + i ], sizeof(uint64_t));
-      printf("%"PRIu64 "\n", val[i] );  
-   }
-printf(" \n");
-printf(" \n");   
-  
+HashCacheEntry cache[1000];
+int cache_size = 0;
+pthread_mutex_t cache_mutex; // Mutex to protect cache access
 
+uint64_t find_cache(unsigned char target_hash[]);
+void add_cache(unsigned char target_hash[], uint64_t num);
 
+int main(int argc, char *argv[])
+{
+    int sockfd, newsockfd, portno, clilen;
+    struct sockaddr_in serv_addr, cli_addr;
 
-   for (size_t i = 0; i < 32; i++)
-   {
-      
-      printf("%c", value[i]);
-   // value[i] = htole64(value[i]);
-   // printf("%"PRIu8, value[i] );
-   }
-    printf(" \n");
-   // printf("%"PRIu64, value );
-   // printf("value is %ld", value);
-   printf("value array is: %ld \n", sizeof(value));
+    pthread_mutex_init(&cache_mutex, NULL); // Initialize the mutex
 
+    /* First call to socket() function */
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0)
+    {
+        perror("ERROR opening socket");
+        exit(1);
+    }
 
-   // for (size_t i = 0; i < 32; i++)
-   // {
-      
-   // memcpy(&value[i], &buffer[PACKET_REQUEST_HASH_OFFSET + i ], sizeof(uint8_t));
-   // // value[i] = htole64(value[i]);
-   // // printf("%"PRIu8, value[i] );
-   // }
-   //  printf(" \n");
-   // printf("%"PRIu64, value );
+    /* Initialize socket structure */
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    portno = 5002;
 
-   // // value =  htobe64(value);
-  
-   uint64_t start;
-   memcpy(&start, &buffer[PACKET_REQUEST_START_OFFSET ], sizeof(uint64_t));
-   start =  htobe64(start) - 1 ;
-   printf("Start: %" PRIu64 "\n",start);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(portno);
 
-   uint64_t end;
-   memcpy(&end, &buffer[PACKET_REQUEST_END_OFFSET ], sizeof(uint64_t));
-   end =  htobe64(end) - 1;
-   printf("End: %" PRIu64 "\n",end);
-   
-   uint8_t prio;
-   memcpy(&prio, &buffer[PACKET_REQUEST_PRIO_OFFSET ], sizeof(uint8_t));
-   // prio =  htobe64(prio) - 1;
-   printf("Prio: %" PRIu8 "\n",prio);
+    /* Bind the host address using bind() call */
+    if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        perror("ERROR on binding");
+        exit(1);
+    }
 
-   
-   // uint8_t intial_number_sent;
-   // intial_number_sent = buffer[]  
-   //printf
+    /* Start listening for clients */
+    listen(sockfd, 5);
+    clilen = sizeof(cli_addr);
 
-   uint64_t ans = (uint64_t) 1;
-   
-   ans = htobe64(ans); 
-   
-   n = write(sock,&ans,PACKET_RESPONSE_SIZE);
-   
-   if (n < 0) {
-      perror("ERROR writing to socket");
-      exit(1);
-   }
-	
+    while (1)
+    {
+        newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
+        if (newsockfd < 0)
+        {
+            perror("ERROR on accept");
+            exit(1);
+        }
+
+        // Create a new thread to handle each client
+        pthread_t thread;
+        int *newsockfd_ptr = malloc(sizeof(int));
+        *newsockfd_ptr = newsockfd; // Pass the socket to the thread
+
+        if (pthread_create(&thread, NULL, doprocessing, (void *)newsockfd_ptr) < 0)
+        {
+            perror("ERROR creating thread");
+            exit(1);
+        }
+
+        // Detach the thread so that it cleans up after itself
+        pthread_detach(thread);
+    }
+
+    // Destroy the mutex before exiting
+    pthread_mutex_destroy(&cache_mutex);
+
+    return 0;
 }
 
-int main( int argc, char *argv[] ) {
-   int sockfd, newsockfd, portno, clilen;
-   char buffer[PACKET_REQUEST_SIZE];
-   struct sockaddr_in serv_addr, cli_addr;
-   int n, pid;
-   // hashe();
-   /* First call to socket() function */
-   sockfd = socket(AF_INET, SOCK_STREAM, 0);
-   
-   if (sockfd < 0) {
-      perror("ERROR opening socket");
-      exit(1);
-   }
-   
-   /* Initialize socket structure */
-   bzero((char *) &serv_addr, sizeof(serv_addr));
-   portno = 5003;
-   
-   serv_addr.sin_family = AF_INET;
-   serv_addr.sin_addr.s_addr = INADDR_ANY;
-   serv_addr.sin_port = htons(portno);
-   
-   /* Now bind the host address using bind() call.*/
-   if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-      perror("ERROR on binding");
-      exit(1);
-   }
-   
-   /* Now start listening for the clients, here
-      * process will go in sleep mode and will wait
-      * for the incoming connection
-   */
-   
-   listen(sockfd,5);
-   clilen = sizeof(cli_addr);
-   
-   while (1) {
-      newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-		
-      if (newsockfd < 0) {
-         perror("ERROR on accept");
-         exit(1);
-      }
-      
-      /* Create child process */
-      pid = fork();
-		
-      if (pid < 0) {
-         perror("ERROR on fork");
-         exit(1);
-      }
-      
-      if (pid == 0) {
-         /* This is the client process */
-         close(sockfd);
-         doprocessing(newsockfd);
-         exit(0);
-      }
-      else {
-         close(newsockfd);
-      }
-		
-   } /* end of while */
+void *doprocessing(void *sock)
+{
+    int newsockfd = *((int *)sock);
+    free(sock); // Free the dynamically allocated socket pointer
+
+    int n;
+    unsigned char buffer[PACKET_REQUEST_SIZE]; // 32 (hash) + 8 (start) + 8 (end) + 1 (p)
+    bzero(buffer, PACKET_REQUEST_SIZE);
+    n = read(newsockfd, buffer, PACKET_REQUEST_SIZE); // Read the full request packet
+
+    if (n < 0)
+    {
+        perror("ERROR reading from socket");
+        exit(1);
+    }
+
+    // Print the received hash in hexadecimal
+    printf("Received hash:");
+    for (size_t i = 0; i < PACKET_REQUEST_START_OFFSET; i++)
+    {
+        printf("%02x ", buffer[i]); // Print each byte of the hash
+    }
+    printf("\n");
+
+    // Extract and print the 'start' value (next 8 bytes)
+    uint64_t start;
+    memcpy(&start, buffer + PACKET_REQUEST_START_OFFSET, sizeof(start)); // Copy from buffer into start
+    start = be64toh(start);                                              // Convert from big-endian to host byte order
+    // printf("Start: %llu\n", (unsigned long long)start);
+
+    // Extract and print the 'end' value (next 8 bytes)
+    uint64_t end;
+    memcpy(&end, buffer + PACKET_REQUEST_END_OFFSET, sizeof(end)); // Copy from buffer into end
+    end = be64toh(end);                                            // Convert from big-endian to host byte order
+    // printf("End: %llu\n", (unsigned long long)end);
+
+    uint64_t result = bruteForce(buffer, start, end); // runs brute force
+    uint64_t num_net = htobe64(result);               // Convert to network byte order
+
+    n = write(newsockfd, &num_net, sizeof(num_net)); // Sends answer and assigns "command" value to n
+    if (n < 0)
+    {
+        perror("ERROR writing to socket");
+        exit(1);
+    }
+
+    close(newsockfd);
+    return NULL;
+}
+
+uint64_t find_cache(unsigned char target_hash[])
+{
+    pthread_mutex_lock(&cache_mutex); // Lock mutex before accessing cache
+    for (size_t i = 0; i < cache_size; i++)
+    {
+        if (memcmp(cache[i].hash, target_hash, SHA256_DIGEST_LENGTH) == 0)
+        {
+            pthread_mutex_unlock(&cache_mutex); // Unlock mutex after access
+            return cache[i].number;
+        }
+    }
+    pthread_mutex_unlock(&cache_mutex); // Unlock mutex after access
+    return 0;
+}
+
+void add_cache(unsigned char target_hash[], uint64_t num)
+{
+    pthread_mutex_lock(&cache_mutex); // Lock mutex before modifying cache
+    cache[cache_size].number = num;
+    memcpy(cache[cache_size].hash, target_hash, SHA256_DIGEST_LENGTH);
+    cache_size++;
+
+    // Print the current contents of the cache for debugging
+    for (size_t i = 0; i < cache_size; i++)
+    {
+        // printf("REAL NUMBER %i Cache size %i Number: %llu, Hash: ", i, cache_size, cache[i].number);
+        for (size_t j = 0; j < SHA256_DIGEST_LENGTH; j++)
+        {
+            // printf("%02x", cache[i].hash[j]); // Print the hash as a hexadecimal string
+        }
+        // printf("\n");
+    }
+    pthread_mutex_unlock(&cache_mutex); // Unlock mutex after modification
+}
+
+uint64_t bruteForce(unsigned char target_hash[], uint64_t start, uint64_t end)
+{
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+
+    uint64_t a = find_cache(target_hash);
+    if (a > 0)
+    {
+        printf("Match found for number: %llu in cache\n", a);
+        return a;
+    }
+
+    for (uint64_t num = start; num < end; num++) // try from start to end
+    {
+        SHA256((unsigned char *)&num, sizeof(num), hash);         // does SHA256 on num, and returns it in hash
+        if (memcmp(hash, target_hash, SHA256_DIGEST_LENGTH) == 0) // checking if hash == target hash
+        {
+            printf("Match found for number: %llu\n", num);
+            add_cache(hash, num);
+            return num;
+        }
+    }
+
+    printf("No match found.\n");
+    return -1;
 }
