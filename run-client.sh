@@ -2,7 +2,7 @@
 
 PATHTOCOMMON=/home/vagrant/os-challenge-common
 SERVER=192.168.101.10
-PORT=5003
+PORT=5002
 SEED=1234
 TOTAL=20
 START=1
