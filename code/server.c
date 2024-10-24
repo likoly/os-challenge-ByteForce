@@ -140,39 +140,22 @@ uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end)
     return 0;
 }
 
+// Thread argument structure
+typedef struct
+{
+    uint8_t hash[32];
+    uint64_t start;
+    uint64_t end;
+    int thread_id;
+    uint64_t result;
+} thread_arg_t;
+
 // Worker thread function
 void *worker(void *arg)
 {
-    while (1)
-    {
-        // Get the next request from the queue
-        request_t request = dequeue();
-
-        uint64_t key = 0;
-        // Check the cache before performing brute-force search
-        if (checkCache(request.hash, &key))
-        {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
-        }
-        else
-        {
-
-            key = bruteForceSearch(request.hash, request.start, request.end);
-            if (key != 0)
-            {
-                addToCache(request.hash, key);
-            }
-        }
-
-        // Send back found key to client
-        key = htobe64(key);
-        write(request.client_socket, &key, 8);
-
-        // Close the client socket
-        close(request.client_socket);
-    }
-    return NULL;
+    thread_arg_t *thread_arg = (thread_arg_t *)arg;
+    thread_arg->result = bruteForceSearch(thread_arg->hash, thread_arg->start, thread_arg->end);
+    pthread_exit(NULL);
 }
 
 // CTRL+C termination / interrupt handler
@@ -217,13 +200,6 @@ int main(int argc, char *argv[])
     struct sockaddr_in cli_addr;
     int cli_length = sizeof(cli_addr);
 
-    // Create worker threads
-    pthread_t threads[NUM_THREADS];
-    for (int i = 0; i < NUM_THREADS; i++)
-    {
-        pthread_create(&threads[i], NULL, worker, NULL);
-    }
-
     // Accept client connections and enqueue requests
     while (1)
     {
@@ -262,7 +238,35 @@ int main(int argc, char *argv[])
         }
         else
         {
-            enqueue(request);
+            // Split the range between NUM_THREADS threads
+            pthread_t threads[NUM_THREADS];
+            thread_arg_t thread_args[NUM_THREADS];
+            uint64_t range = (request.end - request.start) / NUM_THREADS;
+
+            for (int i = 0; i < NUM_THREADS; i++)
+            {
+                thread_args[i].start = request.start + i * range;
+                thread_args[i].end = (i == NUM_THREADS - 1) ? request.end : thread_args[i].start + range;
+                memcpy(thread_args[i].hash, request.hash, 32);
+                pthread_create(&threads[i], NULL, worker, &thread_args[i]);
+            }
+
+            // Join threads and check results
+            for (int i = 0; i < NUM_THREADS; i++)
+            {
+                pthread_join(threads[i], NULL);
+                if (thread_args[i].result != 0)
+                {
+                    key = thread_args[i].result;
+                    addToCache(request.hash, key);
+                    key = htobe64(key);
+                    write(request.client_socket, &key, 8);
+                    break;
+                }
+            }
+
+            // Close the client socket
+            close(request.client_socket);
         }
     }
 
