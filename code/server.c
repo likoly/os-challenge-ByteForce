@@ -38,18 +38,6 @@ typedef struct
     int client_socket;
 } request_t;
 
-// Queue structure for client requests
-typedef struct node
-{
-    request_t request;
-    struct node *next;
-} node_t;
-
-node_t *head = NULL;
-node_t *tail = NULL;
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
-
 // Function to check the cache for a hash
 int checkCache(uint8_t *hash, uint64_t *key)
 {
@@ -80,60 +68,36 @@ void addToCache(uint8_t *hash, uint64_t key)
     pthread_mutex_unlock(&cache_mutex);
 }
 
-// Function to enqueue a request
-void enqueue(request_t request)
-{
-    pthread_mutex_lock(&queue_mutex);
-    node_t *new_node = (node_t *)malloc(sizeof(node_t));
-    new_node->request = request;
-    new_node->next = NULL;
-    if (tail == NULL)
-    {
-        head = tail = new_node;
-    }
-    else
-    {
-        tail->next = new_node;
-        tail = new_node;
-    }
-    pthread_cond_signal(&queue_cond);
-    pthread_mutex_unlock(&queue_mutex);
-}
-
-// Function to dequeue a request
-request_t dequeue()
-{
-    pthread_mutex_lock(&queue_mutex);
-    while (head == NULL)
-    {
-        pthread_cond_wait(&queue_cond, &queue_mutex);
-    }
-    node_t *temp = head;
-    request_t request = temp->request;
-    head = head->next;
-    if (head == NULL)
-    {
-        tail = NULL;
-    }
-    free(temp);
-    pthread_mutex_unlock(&queue_mutex);
-    return request;
-}
-
-// Brute-force search function for a range
-uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end)
+// Brute-force search function for a range with immediate result sending and canceling other threads
+uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end, int client_socket, pthread_t *threads, int num_threads)
 {
     uint8_t calculatedHash[32];
     uint64_t key;
     for (uint64_t i = start; i < end; i++)
     {
+        // Calculate hash
         SHA256_CTX sha256;
         SHA256_Init(&sha256);
         SHA256_Update(&sha256, &i, 8);
         SHA256_Final(calculatedHash, &sha256);
+
         if (memcmp(hash, calculatedHash, 32) == 0)
         {
             key = i;
+
+            // Immediately send the key to the client
+            key = htobe64(key);
+            write(client_socket, &key, 8);
+
+            // Cancel all other threads
+            for (int j = 0; j < num_threads; j++)
+            {
+                if (pthread_self() != threads[j]) // Don't cancel the current thread
+                {
+                    pthread_cancel(threads[j]);
+                }
+            }
+
             return key;
         }
     }
@@ -148,13 +112,23 @@ typedef struct
     uint64_t end;
     int thread_id;
     uint64_t result;
+    int client_socket;
+    pthread_t *threads; // Pass the thread array to allow bruteForceSearch to cancel others
+    int num_threads;
 } thread_arg_t;
 
 // Worker thread function
 void *worker(void *arg)
 {
     thread_arg_t *thread_arg = (thread_arg_t *)arg;
-    thread_arg->result = bruteForceSearch(thread_arg->hash, thread_arg->start, thread_arg->end);
+
+    // Set thread to be cancelable
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+
+    // Perform brute-force search and send result if found, canceling other threads
+    thread_arg->result = bruteForceSearch(thread_arg->hash, thread_arg->start, thread_arg->end, thread_arg->client_socket, thread_arg->threads, thread_arg->num_threads);
+
     pthread_exit(NULL);
 }
 
@@ -248,21 +222,16 @@ int main(int argc, char *argv[])
                 thread_args[i].start = request.start + i * range;
                 thread_args[i].end = (i == NUM_THREADS - 1) ? request.end : thread_args[i].start + range;
                 memcpy(thread_args[i].hash, request.hash, 32);
+                thread_args[i].client_socket = client_socket; // Pass the client socket to each thread
+                thread_args[i].threads = threads;             // Pass the thread array to allow cancellation
+                thread_args[i].num_threads = NUM_THREADS;
                 pthread_create(&threads[i], NULL, worker, &thread_args[i]);
             }
 
-            // Join threads and check results
+            // Wait for all threads to finish (canceled ones will stop immediately)
             for (int i = 0; i < NUM_THREADS; i++)
             {
                 pthread_join(threads[i], NULL);
-                if (thread_args[i].result != 0)
-                {
-                    key = thread_args[i].result;
-                    addToCache(request.hash, key);
-                    key = htobe64(key);
-                    write(request.client_socket, &key, 8);
-                    break;
-                }
             }
 
             // Close the client socket
