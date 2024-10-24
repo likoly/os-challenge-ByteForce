@@ -1,0 +1,47 @@
+Handle request{
+    Receive request
+    devide into hash, start, end, prio
+    make struct
+    if request in cache {
+        return key
+    }else{
+        add request to queue
+    }
+}
+
+Dequeue {
+    take head
+    devide inte parts range (end-start)/len(Threads)
+    for i in range (len(Threads)){
+        Threads[i] should bruteforce(range)
+    }
+}
+
+bruteforce(range){
+    for i in range (range * i + start,range * (i+1) + start){
+        bruteforce algorithm
+        if found{
+            key add to cache
+            return key to client
+            signal for other threads to stop
+            checkQueue(key)
+        }
+        if stopSignal {
+            break
+        }
+    }
+}
+checkQueue(key){
+    go through queue and check if any matches
+}
+
+struct cache{
+    hash
+    key
+}
+struct request{
+    hash
+    start
+    end
+    prio
+}

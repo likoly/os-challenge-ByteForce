@@ -4,7 +4,7 @@
 # The seed value will be a non-zero value that will not be disclosed.
 #
 
-PATHTOCOMMON=~/os/challenge/
+PATHTOCOMMON=~/os/master/
 SERVER=localhost
 PORT=${1:-5002}
 SEED=3435245

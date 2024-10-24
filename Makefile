@@ -1,9 +1,13 @@
-default:
-	gcc -O3 -o server server.c -lcrypto -pthread
+CC = gcc
+CFLAGS = -Wall -g
+LDFLAGS = -lssl -lcrypto -lpthread
+TARGET = x86_64/bin/linux/server
+SRC = code/server.c
+
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 clean:
-<<<<<<< HEAD
-	rm -f server
-=======
-	rm -f server
->>>>>>> 4fc2cefabf3cdf4258211ccfa662c6649b791e83
+	rm -f $(TARGET)
