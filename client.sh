@@ -6,7 +6,7 @@
 
 PATHTOCOMMON=~/os/master/
 SERVER=localhost
-PORT=${1:-5002}
+PORT=${1:-5000}
 SEED=3435245
 TOTAL=500
 START=0
