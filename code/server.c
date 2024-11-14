@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "messages.h"
+<<<<<<< HEAD
 #include "funcs.h"
 
 // Priority Queue Node structure
@@ -30,6 +31,56 @@ node_t *newNode(request_t request)
     temp->request = request;
     temp->next = NULL;
     return temp;
+=======
+#include "funcs.h" // contains cache, brute-force, pack, NUM_THREADS, request_t definition
+
+// Priority queue array and its size for the binary heap
+request_t request_queue[QUEUE_SIZE];
+int queue_size = 0; // heap size is initially zero
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
+
+// Swap helper function
+void swap(request_t *a, request_t *b)
+{
+    request_t temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Heapify up (for insertion)
+void heapify_up(int index)
+{
+    int parent = (index - 1) / 2;
+    while (index > 0 && request_queue[index].prio > request_queue[parent].prio)
+    {
+        swap(&request_queue[index], &request_queue[parent]);
+        index = parent;
+        parent = (index - 1) / 2;
+    }
+}
+
+// Heapify down (for deletion)
+void heapify_down(int index)
+{
+    int largest = index;
+    int left = 2 * index + 1;
+    int right = 2 * index + 2;
+
+    if (left < queue_size && request_queue[left].prio > request_queue[largest].prio)
+    {
+        largest = left;
+    }
+    if (right < queue_size && request_queue[right].prio > request_queue[largest].prio)
+    {
+        largest = right;
+    }
+    if (largest != index)
+    {
+        swap(&request_queue[index], &request_queue[largest]);
+        heapify_down(largest);
+    }
+>>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
 }
 
 // Function to enqueue a request based on priority
@@ -37,6 +88,7 @@ void enqueue(request_t request)
 {
     pthread_mutex_lock(&queue_mutex);
 
+<<<<<<< HEAD
     node_t *new_node = newNode(request);
     if (head == NULL || head->request.prio > request.prio)
     {
@@ -55,6 +107,15 @@ void enqueue(request_t request)
         new_node->next = start->next;
         start->next = new_node;
     }
+=======
+    if (queue_size < QUEUE_SIZE)
+    {
+        // Insert at the end and heapify up to maintain max-heap property
+        request_queue[queue_size] = request;
+        heapify_up(queue_size);
+        queue_size++;
+    }
+>>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
 
     pthread_cond_signal(&queue_cond);
     pthread_mutex_unlock(&queue_mutex);
@@ -65,12 +126,18 @@ request_t dequeue()
 {
     pthread_mutex_lock(&queue_mutex);
 
+<<<<<<< HEAD
     // Wait if queue is empty
     while (head == NULL)
+=======
+    // Wait if the queue is empty
+    while (queue_size == 0)
+>>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
     {
         pthread_cond_wait(&queue_cond, &queue_mutex);
     }
 
+<<<<<<< HEAD
     // Peek at the request with the highest priority (head)
     request_t request = head->request;
 
@@ -78,12 +145,21 @@ request_t dequeue()
     node_t *temp = head;
     head = head->next;
     free(temp);
+=======
+    // The root of the heap is the highest-priority request
+    request_t highest_prio_request = request_queue[0];
+    request_queue[0] = request_queue[queue_size - 1];
+    queue_size--;
+>>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
+
+    // Heapify down to maintain max-heap property
+    heapify_down(0);
 
     pthread_mutex_unlock(&queue_mutex);
     return request;
 }
 
-// Worker thread function
+// Worker thread function (same as before)
 void *worker(void *arg)
 {
     while (1)
@@ -119,7 +195,10 @@ void *worker(void *arg)
 
 int main(int argc, char *argv[])
 {
+<<<<<<< HEAD
     // Create socket
+=======
+>>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
     // Make sure the port is available

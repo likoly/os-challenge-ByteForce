@@ -164,3 +164,6 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
+// Prio stats: 53 43 35 33 34 27 24 25 20 21 20 14 8 18 16 109
+// Results: 100.00 83522363
