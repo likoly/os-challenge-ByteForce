@@ -1,5 +1,5 @@
 
-#define NUM_THREADS 12
+#define NUM_THREADS 7
 #define CACHE_SIZE 1000
 #define QUEUE_SIZE 1000 // Array size for the priority queue
 
