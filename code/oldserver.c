@@ -12,27 +12,6 @@
 #include "messages.h"
 #include "funcs.h"
 
-volatile uint64_t key;
-request_t currentRequest;
-pthread_t threads[NUM_THREADS];
-uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end,uint64_t *key, uint64_t num)
-{
-    uint8_t calculatedHash[32];
-    for (uint64_t i = start + num; i < end; i += 6)
-    {
-        SHA256_CTX sha256;
-        SHA256_Init(&sha256);
-        SHA256_Update(&sha256, &i, sizeof(i));
-        SHA256_Final(calculatedHash, &sha256);
-        if (memcmp(hash, calculatedHash, 32) == 0)
-        {
-            key = i;
-            return i;
-        }
-    }
-    return 0;
-}
-
 // Priority Queue Node structure
 typedef struct node
 {
@@ -105,50 +84,36 @@ request_t dequeue()
 }
 
 // Worker thread function
-void *worker(int threadID)
+void *worker(void *arg)
 {
-    int64_t oldRequestHash;
     while (1)
-    {       
+    {
+        // Get the next request from the queue
+        request_t request = dequeue();
 
-        if(threadID == 6){
-            // Get the next request from the queue
-            request_t request = dequeue();
-            currentRequest = request;
-            key = 0;
-            // Check the cache before performing brute-force search
-            if (checkCache(request.hash, &key))
-            {
-                // Key found in cache, no need to brute-force
-                printf("Cache hit for hash\n");
-            }
-
-            while (key != 0)
-            {
-
-            }
-                
-            addToCache(request.hash, key);
-            
-
-            // Send back found key to client
-            key = htobe64(key);
-            write(request.client_socket, &key, 8);
-
-            // Close the client socket
-            close(request.client_socket);
-        }else{
-            request_t request = currentRequest;
-            if (oldRequestHash == request.hash)
-            {
-                continue;
-            }else
-            {
-                bruteForceSearch1(request.hash, request.start, request.end, &key, threadID);
-                oldRequestHash = request.hash;
-            }
-
+        uint64_t key = 0;
+        // Check the cache before performing brute-force search
+        if (checkCache(request.hash, &key))
+        {
+            // Key found in cache, no need to brute-force
+            printf("Cache hit for hash\n");
         }
+        else
+        {
+             
+            key = bruteForceSearch(request.hash, request.start, request.end);
+            if (key != 0)
+            {
+                addToCache(request.hash, key);
+            }
+        }
+
+        // Send back found key to client
+        key = htobe64(key);
+        write(request.client_socket, &key, 8);
+
+        // Close the client socket
+        close(request.client_socket);
     }
     return NULL;
 }
@@ -186,13 +151,12 @@ int main(int argc, char *argv[])
     int cli_length = sizeof(cli_addr);
 
     // Create worker threads
-    
+    pthread_t threads[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++)
     {
-        pthread_create(&threads[i], NULL, worker(i), NULL);
+        pthread_create(&threads[i], NULL, worker, NULL);
     }
 
-    // pthread_create(&threads[0], NULL, worker, NULL);
     // Accept client connections and enqueue requests
     while (1)
     {
