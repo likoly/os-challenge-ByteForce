@@ -26,7 +26,7 @@ uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end,uint64_t 
         SHA256_Final(calculatedHash, &sha256);
         if (memcmp(hash, calculatedHash, 32) == 0)
         {
-            key = i;
+            *key = i;
             return i;
         }
     }
@@ -105,8 +105,9 @@ request_t dequeue()
 }
 
 // Worker thread function
-void *worker(int threadID)
+void *worker(void *arg)
 {
+    int threadID = (int)(intptr_t)arg;
     int64_t oldRequestHash;
     while (1)
     {       
@@ -189,7 +190,7 @@ int main(int argc, char *argv[])
     
     for (int i = 0; i < NUM_THREADS; i++)
     {
-        pthread_create(&threads[i], NULL, worker(i), NULL);
+        pthread_create(&threads[i], NULL, worker, (void *)(intptr_t)i);
     }
 
     // pthread_create(&threads[0], NULL, worker, NULL);
