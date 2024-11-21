@@ -8,13 +8,31 @@
 #include <signal.h>
 #include <pthread.h>
 #include <stdint.h>
-
+#include <stdbool.h>
 #include "messages.h"
 #include "funcs.h"
 
-volatile uint64_t key;
-request_t currentRequest;
+volatile uint64_t globalKey;
+// pthread_mutex_t globalKey_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// // Function to safely set globalKey
+// void setGlobalKey(uint64_t value) {
+//     pthread_mutex_lock(&globalKey_mutex);
+//     globalKey = value;
+//     pthread_mutex_unlock(&globalKey_mutex);
+// }
+
+// // Function to safely get globalKey
+// uint64_t getGlobalKey() {
+//     pthread_mutex_lock(&globalKey_mutex);
+//     uint64_t value = globalKey;
+//     pthread_mutex_unlock(&globalKey_mutex);
+//     return value;
+// }
+
+ request_t currentRequest;
 pthread_t threads[NUM_THREADS];
+volatile bool founder;
 uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end, uint64_t num)
 {
     uint8_t calculatedHash[32];
@@ -26,10 +44,13 @@ uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end, uint64_t
         SHA256_Final(calculatedHash, &sha256);
         if (memcmp(hash, calculatedHash, 32) == 0)
         {
-            key = i;
+            printf("found:");
+             printf("%lld\n", i);
+            // setGlobalKey(i);
+            globalKey = i;
             return i;
         }
-        if(key != 0  ){
+        if(globalKey != 0  ){
             return 0;
         }
     }
@@ -111,7 +132,8 @@ request_t dequeue()
 void *worker(void *arg)
 {
     int threadID = (int)(intptr_t)arg;
-    int64_t oldRequestHash;
+    bool follower = false;
+    printf("waiter");
     while (1)
     {       
 
@@ -119,37 +141,50 @@ void *worker(void *arg)
             // Get the next request from the queue
             request_t request = dequeue();
             currentRequest = request;
+            
             // Check the cache before performing brute-force search
-            if (checkCache(request.hash, &key))
+            // if (checkCache(request.hash, &globalKey))
+            // {
+            //     // Key found in cache, no need to brute-force
+            //     printf("Cache hit for hash\n");
+            // }
+            globalKey = 0;
+            printf("wait");
+            while (globalKey == 0)
             {
-                // Key found in cache, no need to brute-force
-                printf("Cache hit for hash\n");
-            }
 
-            key = 0;
-            while (key != 0)
+            }
+            int64_t foundKey = globalKey;  
+            printf("foundkey:%lld\n", foundKey);
+            printf("globalKey:%lld\n", globalKey);
+            if (founder)
             {
-
+                founder = false;
+            }else
+            {
+                founder = true;
             }
-                
-            addToCache(request.hash, key);
+            
+              
+            addToCache(request.hash, foundKey);
             
 
-            // Send back found key to client
-            key = htobe64(key);
-            write(request.client_socket, &key, 8);
+            // Send back found foundKey to client
+            foundKey = htobe64(foundKey);
+            write(request.client_socket, &foundKey, 8);
 
             // Close the client socket
             close(request.client_socket);
+            
         }else{
             request_t request = currentRequest;
-            if (oldRequestHash == request.hash)
+            if (founder == follower)
             {
                 continue;
             }else
             {
+                follower = founder;
                 bruteForceSearch1(request.hash, request.start, request.end, threadID);
-                oldRequestHash = request.hash;
             }
 
         }
@@ -161,7 +196,10 @@ int main(int argc, char *argv[])
 {
     // Create socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    founder = true;
+        printf("here");
 
+    // pthread_mutex_init(&globalKey_mutex, NULL);
     // Make sure the port is available
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
     {
@@ -190,7 +228,7 @@ int main(int argc, char *argv[])
     int cli_length = sizeof(cli_addr);
 
     // Create worker threads
-    
+    printf("here");
     for (int i = 0; i < NUM_THREADS; i++)
     {
         pthread_create(&threads[i], NULL, worker, (void *)(intptr_t)i);
@@ -214,15 +252,15 @@ int main(int argc, char *argv[])
 
         // Extract request data
         request_t request = pack(buffer, client_socket);
-        uint64_t key = 0;
+        uint64_t localKey = 0;
 
         // Check the cache before performing brute-force search
-        if (checkCache(request.hash, &key))
+        if (checkCache(request.hash, &localKey))
         {
             // Key found in cache, no need to brute-force
             printf("Cache hit for hash\n");
-            key = htobe64(key);
-            write(request.client_socket, &key, 8);
+            localKey = htobe64(localKey);
+            write(request.client_socket, &localKey, 8);
 
             // Close the client socket
             close(request.client_socket);
