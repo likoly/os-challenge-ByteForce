@@ -44,7 +44,6 @@ uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end, uint64_t
         SHA256_Final(calculatedHash, &sha256);
         if (memcmp(hash, calculatedHash, 32) == 0)
         {
-            printf("found:");
              printf("%lld\n", i);
             // setGlobalKey(i);
             globalKey = i;
@@ -133,7 +132,7 @@ void *worker(void *arg)
 {
     int threadID = (int)(intptr_t)arg;
     bool follower = false;
-    printf("waiter");
+    
     while (1)
     {       
 
@@ -149,7 +148,7 @@ void *worker(void *arg)
             //     printf("Cache hit for hash\n");
             // }
             globalKey = 0;
-            printf("wait");
+         
             while (globalKey == 0)
             {
                  usleep(10);
@@ -197,7 +196,7 @@ int main(int argc, char *argv[])
     // Create socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     founder = true;
-        printf("here");
+  
 
     // pthread_mutex_init(&globalKey_mutex, NULL);
     // Make sure the port is available
@@ -228,7 +227,7 @@ int main(int argc, char *argv[])
     int cli_length = sizeof(cli_addr);
 
     // Create worker threads
-    printf("here");
+ 
     for (int i = 0; i < NUM_THREADS; i++)
     {
         pthread_create(&threads[i], NULL, worker, (void *)(intptr_t)i);
