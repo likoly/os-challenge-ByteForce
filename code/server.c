@@ -152,7 +152,7 @@ void *worker(void *arg)
             printf("wait");
             while (globalKey == 0)
             {
-
+                 usleep(10);
             }
             int64_t foundKey = globalKey;  
             printf("foundkey:%lld\n", foundKey);
