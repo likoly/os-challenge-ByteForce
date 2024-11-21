@@ -7,7 +7,7 @@ SRC = code/server.c
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
+	$(CC) -O3 $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET)
