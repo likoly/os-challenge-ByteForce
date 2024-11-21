@@ -15,7 +15,7 @@
 volatile uint64_t key;
 request_t currentRequest;
 pthread_t threads[NUM_THREADS];
-uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end,uint64_t *key, uint64_t num)
+uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end, uint64_t num)
 {
     uint8_t calculatedHash[32];
     for (uint64_t i = start + num; i < end; i += 6)
@@ -26,8 +26,11 @@ uint64_t bruteForceSearch1(uint8_t *hash, uint64_t start, uint64_t end,uint64_t 
         SHA256_Final(calculatedHash, &sha256);
         if (memcmp(hash, calculatedHash, 32) == 0)
         {
-            *key = i;
+            key = i;
             return i;
+        }
+        if(key != 0  ){
+            return 0;
         }
     }
     return 0;
@@ -116,7 +119,6 @@ void *worker(void *arg)
             // Get the next request from the queue
             request_t request = dequeue();
             currentRequest = request;
-            key = 0;
             // Check the cache before performing brute-force search
             if (checkCache(request.hash, &key))
             {
@@ -124,6 +126,7 @@ void *worker(void *arg)
                 printf("Cache hit for hash\n");
             }
 
+            key = 0;
             while (key != 0)
             {
 
@@ -145,7 +148,7 @@ void *worker(void *arg)
                 continue;
             }else
             {
-                bruteForceSearch1(request.hash, request.start, request.end, &key, threadID);
+                bruteForceSearch1(request.hash, request.start, request.end, threadID);
                 oldRequestHash = request.hash;
             }
 
