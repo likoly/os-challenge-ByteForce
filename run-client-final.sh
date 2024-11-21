@@ -4,9 +4,9 @@
 # The seed value will be a non-zero value that will not be disclosed.
 #
 
-PATHTOCOMMON=~/operating/os-challenge-common
-SERVER=localhost
-PORT=${1:-5002}
+PATHTOCOMMON=/home/vagrant/os-challenge-common
+SERVER=192.168.101.10
+PORT=5003
 SEED=5041
 TOTAL=500
 START=0
