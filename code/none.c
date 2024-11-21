@@ -1,15 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <openssl/sha.h>
-#include <signal.h>
-#include <pthread.h>
-#include <stdint.h>
-
-#include "messages.h"
 #include "funcs.h"
 
 // Queue structure for client requests
@@ -21,9 +9,6 @@ typedef struct node
 
 node_t *head = NULL;
 node_t *tail = NULL;
-
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
 
 // Function to enqueue a request
 void enqueue(request_t request)
@@ -63,41 +48,6 @@ request_t dequeue()
     free(temp);
     pthread_mutex_unlock(&queue_mutex);
     return request;
-}
-
-// Worker thread function
-void *worker(void *arg)
-{
-    while (1)
-    {
-        // Get the next request from the queue
-        request_t request = dequeue();
-
-        uint64_t key = 0;
-        // Check the cache before performing brute-force search
-        if (checkCache(request.hash, &key))
-        {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
-        }
-        else
-        {
-
-            key = bruteForceSearch(request.hash, request.start, request.end);
-            if (key != 0)
-            {
-                addToCache(request.hash, key);
-            }
-        }
-
-        // Send back found key to client
-        key = htobe64(key);
-        write(request.client_socket, &key, 8);
-
-        // Close the client socket
-        close(request.client_socket);
-    }
-    return NULL;
 }
 
 int main(int argc, char *argv[])
@@ -162,7 +112,6 @@ int main(int argc, char *argv[])
         if (checkCache(request.hash, &key))
         {
             // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
             key = htobe64(key);
             write(request.client_socket, &key, 8);
 

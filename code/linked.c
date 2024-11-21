@@ -1,15 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <openssl/sha.h>
-#include <signal.h>
-#include <pthread.h>
-#include <stdint.h>
-
-#include "messages.h"
 #include "funcs.h"
 
 // Priority Queue Node structure
@@ -20,8 +8,7 @@ typedef struct node
 } node_t;
 
 node_t *head = NULL;
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
+node_t *tail = NULL;
 
 // Function to create a new node
 node_t *newNode(request_t request)
@@ -31,90 +18,82 @@ node_t *newNode(request_t request)
     temp->next = NULL;
     return temp;
 }
-
-// Function to enqueue a request based on priority
 void enqueue(request_t request)
 {
+    node_t *new_node = (node_t *)malloc(sizeof(node_t));
+    new_node->request = request;
+    new_node->next = NULL;
+
     pthread_mutex_lock(&queue_mutex);
 
-    node_t *new_node = newNode(request);
-    if (head == NULL || head->request.prio > request.prio)
+    if (head == NULL)
     {
-        // Insert at head if queue is empty or new node has higher priority
+        // Queue is empty, insert at the head
+        head = new_node;
+    }
+    else if (request.prio == 1)
+    {
+        // Priority 1: Directly append at the tail
+        node_t *tail = head;
+        while (tail->next != NULL)
+        {
+            tail = tail->next;
+        }
+        tail->next = new_node;
+    }
+    else if (head->request.prio > request.prio)
+    {
+        // Insert at the head if it has higher priority
         new_node->next = head;
         head = new_node;
     }
     else
     {
-        // Find position for new node
-        node_t *start = head;
-        while (start->next != NULL && start->next->request.prio <= request.prio)
+        // Find the appropriate position based on priority
+        node_t *current = head;
+        while (current->next != NULL && current->next->request.prio <= request.prio)
         {
-            start = start->next;
+            current = current->next;
         }
-        new_node->next = start->next;
-        start->next = new_node;
+        new_node->next = current->next;
+        current->next = new_node;
     }
 
-    pthread_cond_signal(&queue_cond);
+    // Signal only if the queue was previously empty
+    if (new_node->next == NULL || head == new_node)
+    {
+        pthread_cond_signal(&queue_cond);
+    }
+
     pthread_mutex_unlock(&queue_mutex);
 }
 
-// Function to dequeue a request with the highest priority (integrated peek and removal)
 request_t dequeue()
 {
     pthread_mutex_lock(&queue_mutex);
 
-    // Wait if queue is empty
+    // Wait if the queue is empty
     while (head == NULL)
     {
         pthread_cond_wait(&queue_cond, &queue_mutex);
     }
 
-    // Peek at the request with the highest priority (head)
-    request_t request = head->request;
-
-    // Remove the node after peeking
+    // Peek at the request at the head
     node_t *temp = head;
+    request_t request = temp->request;
+
+    // Remove the head node
     head = head->next;
+    if (head == NULL)
+    {
+        // If the queue becomes empty, reset the tail pointer
+        tail = NULL;
+    }
+
     free(temp);
 
     pthread_mutex_unlock(&queue_mutex);
     return request;
-}
-
-// Worker thread function
-void *worker(void *arg)
-{
-    while (1)
-    {
-        // Get the next request from the queue
-        request_t request = dequeue();
-
-        uint64_t key = 0;
-        // Check the cache before performing brute-force search
-        if (checkCache(request.hash, &key))
-        {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
-        }
-        else
-        {
-            key = bruteForceSearch(request.hash, request.start, request.end);
-            if (key != 0)
-            {
-                addToCache(request.hash, key);
-            }
-        }
-
-        // Send back found key to client
-        key = htobe64(key);
-        write(request.client_socket, &key, 8);
-
-        // Close the client socket
-        close(request.client_socket);
-    }
-    return NULL;
 }
 
 int main(int argc, char *argv[])
@@ -178,12 +157,8 @@ int main(int argc, char *argv[])
         // Check the cache before performing brute-force search
         if (checkCache(request.hash, &key))
         {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
             key = htobe64(key);
             write(request.client_socket, &key, 8);
-
-            // Close the client socket
             close(request.client_socket);
         }
         else

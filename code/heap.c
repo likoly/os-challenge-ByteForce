@@ -1,23 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <openssl/sha.h>
-#include <signal.h>
-#include <pthread.h>
-#include <stdint.h>
-#include <arpa/inet.h>
-
-#include "messages.h"
 #include "funcs.h" // contains cache, brute-force, pack, NUM_THREADS, request_t definition
 
 // Priority queue array and its size for the binary heap
 request_t request_queue[QUEUE_SIZE];
 int queue_size = 0; // heap size is initially zero
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
 
 // Swap helper function
 void swap(request_t *a, request_t *b)
@@ -99,34 +84,6 @@ request_t dequeue()
 
     pthread_mutex_unlock(&queue_mutex);
     return highest_prio_request;
-}
-
-// Worker thread function (same as before)
-void *worker(void *arg)
-{
-    while (1)
-    {
-        request_t request = dequeue();
-        uint64_t key = 0;
-
-        if (checkCache(request.hash, &key))
-        {
-            printf("Cache hit for hash\n");
-        }
-        else
-        {
-            key = bruteForceSearch(request.hash, request.start, request.end);
-            if (key != 0)
-            {
-                addToCache(request.hash, key);
-            }
-        }
-
-        key = htobe64(key);
-        write(request.client_socket, &key, sizeof(key));
-        close(request.client_socket);
-    }
-    return NULL;
 }
 
 int main(int argc, char *argv[])

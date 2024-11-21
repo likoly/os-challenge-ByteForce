@@ -8,186 +8,202 @@
 #include <signal.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 
 #include "messages.h"
-<<<<<<< HEAD
-#include "funcs.h"
 
-// Priority Queue Node structure
-typedef struct node
+#define NUM_THREADS 7
+#define CACHE_SIZE 1000
+#define QUEUE_SIZE 1000 // Array size for the priority queue
+
+// Mutexes and condition variables
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Global socket variable
+int server_fd;
+
+// Cache structure for storing hashes and their corresponding keys
+typedef struct
+{
+    uint8_t hash[32];
+    uint64_t key;
+} cache_entry_t;
+
+cache_entry_t cache[CACHE_SIZE];
+int cache_count = 0;
+
+// Request structure for client data
+typedef struct
+{
+    uint8_t hash[32];
+    uint64_t start;
+    uint64_t end;
+    uint8_t prio;
+    int client_socket;
+} request_t;
+
+// Queue for storing requests
+request_t request_queue[QUEUE_SIZE];
+int queue_size = -1;
+
+// Function declarations
+int checkCache(uint8_t *hash, uint64_t *key);
+void addToCache(uint8_t *hash, uint64_t key);
+uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end);
+request_t pack(char buffer[], int client_socket);
+int peek();
+void enqueue(request_t request);
+request_t dequeue();
+void checkQueue(uint8_t *hash);
+void *worker(void *arg);
+
+int checkCache(uint8_t *hash, uint64_t *key)
+{
+    pthread_mutex_lock(&cache_mutex);
+    for (int i = 0; i < cache_count; i++)
+    {
+        if (memcmp(cache[i].hash, hash, 32) == 0)
+        {
+            *key = cache[i].key;
+            pthread_mutex_unlock(&cache_mutex);
+            printf("Cache hit for hash\n");
+            return 1; // Hash found in the cache
+        }
+    }
+    pthread_mutex_unlock(&cache_mutex);
+    return 0; // Hash not found in the cache
+}
+
+void addToCache(uint8_t *hash, uint64_t key)
+{
+    pthread_mutex_lock(&cache_mutex);
+    if (cache_count < CACHE_SIZE)
+    {
+        memcpy(cache[cache_count].hash, hash, 32);
+        cache[cache_count].key = key;
+        cache_count++;
+    }
+    pthread_mutex_unlock(&cache_mutex);
+}
+
+uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end)
+{
+    uint8_t calculatedHash[32];
+    for (uint64_t i = start; i < end; i++)
+    {
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, &i, sizeof(i));
+        SHA256_Final(calculatedHash, &sha256);
+        if (memcmp(hash, calculatedHash, 32) == 0)
+        {
+            return i;
+        }
+    }
+    return 0;
+}
+
+request_t pack(char buffer[], int client_socket)
 {
     request_t request;
-    struct node *next;
-} node_t;
-
-node_t *head = NULL;
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
-
-// Function to create a new node
-node_t *newNode(request_t request)
-{
-    node_t *temp = (node_t *)malloc(sizeof(node_t));
-    temp->request = request;
-    temp->next = NULL;
-    return temp;
-=======
-#include "funcs.h" // contains cache, brute-force, pack, NUM_THREADS, request_t definition
-
-// Priority queue array and its size for the binary heap
-request_t request_queue[QUEUE_SIZE];
-int queue_size = 0; // heap size is initially zero
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
-
-// Swap helper function
-void swap(request_t *a, request_t *b)
-{
-    request_t temp = *a;
-    *a = *b;
-    *b = temp;
+    memcpy(request.hash, buffer + PACKET_REQUEST_HASH_OFFSET, 32);
+    memcpy(&request.start, buffer + PACKET_REQUEST_START_OFFSET, 8);
+    memcpy(&request.end, buffer + PACKET_REQUEST_END_OFFSET, 8);
+    memcpy(&request.prio, buffer + PACKET_REQUEST_PRIO_OFFSET, 1);
+    request.start = be64toh(request.start);
+    request.end = be64toh(request.end);
+    request.client_socket = client_socket;
+    return request;
 }
 
-// Heapify up (for insertion)
-void heapify_up(int index)
+int peek()
 {
-    int parent = (index - 1) / 2;
-    while (index > 0 && request_queue[index].prio > request_queue[parent].prio)
+    int highestPriority = -1;
+    int highestIndex = -1;
+
+    for (int i = 0; i <= queue_size; i++)
     {
-        swap(&request_queue[index], &request_queue[parent]);
-        index = parent;
-        parent = (index - 1) / 2;
+        if (request_queue[i].prio > highestPriority)
+        {
+            highestPriority = request_queue[i].prio;
+            highestIndex = i;
+        }
     }
+    return highestIndex;
 }
 
-// Heapify down (for deletion)
-void heapify_down(int index)
-{
-    int largest = index;
-    int left = 2 * index + 1;
-    int right = 2 * index + 2;
-
-    if (left < queue_size && request_queue[left].prio > request_queue[largest].prio)
-    {
-        largest = left;
-    }
-    if (right < queue_size && request_queue[right].prio > request_queue[largest].prio)
-    {
-        largest = right;
-    }
-    if (largest != index)
-    {
-        swap(&request_queue[index], &request_queue[largest]);
-        heapify_down(largest);
-    }
->>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
-}
-
-// Function to enqueue a request based on priority
 void enqueue(request_t request)
 {
     pthread_mutex_lock(&queue_mutex);
-
-<<<<<<< HEAD
-    node_t *new_node = newNode(request);
-    if (head == NULL || head->request.prio > request.prio)
+    if (queue_size < QUEUE_SIZE - 1)
     {
-        // Insert at head if queue is empty or new node has higher priority
-        new_node->next = head;
-        head = new_node;
-    }
-    else
-    {
-        // Find position for new node
-        node_t *start = head;
-        while (start->next != NULL && start->next->request.prio <= request.prio)
-        {
-            start = start->next;
-        }
-        new_node->next = start->next;
-        start->next = new_node;
-    }
-=======
-    if (queue_size < QUEUE_SIZE)
-    {
-        // Insert at the end and heapify up to maintain max-heap property
-        request_queue[queue_size] = request;
-        heapify_up(queue_size);
         queue_size++;
+        request_queue[queue_size] = request;
     }
->>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
-
     pthread_cond_signal(&queue_cond);
     pthread_mutex_unlock(&queue_mutex);
 }
 
-// Function to dequeue a request with the highest priority (integrated peek and removal)
 request_t dequeue()
 {
     pthread_mutex_lock(&queue_mutex);
 
-<<<<<<< HEAD
-    // Wait if queue is empty
-    while (head == NULL)
-=======
     // Wait if the queue is empty
-    while (queue_size == 0)
->>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
+    while (queue_size == -1)
     {
         pthread_cond_wait(&queue_cond, &queue_mutex);
     }
 
-<<<<<<< HEAD
-    // Peek at the request with the highest priority (head)
-    request_t request = head->request;
+    int highestIndex = peek();
+    request_t highest_prio_request = request_queue[highestIndex];
 
-    // Remove the node after peeking
-    node_t *temp = head;
-    head = head->next;
-    free(temp);
-=======
-    // The root of the heap is the highest-priority request
-    request_t highest_prio_request = request_queue[0];
-    request_queue[0] = request_queue[queue_size - 1];
+    // Shift elements to remove the dequeued element
+    for (int i = highestIndex; i < queue_size; i++)
+    {
+        request_queue[i] = request_queue[i + 1];
+    }
     queue_size--;
->>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
-
-    // Heapify down to maintain max-heap property
-    heapify_down(0);
 
     pthread_mutex_unlock(&queue_mutex);
-    return request;
+    return highest_prio_request;
 }
 
-// Worker thread function (same as before)
+void checkQueue(uint8_t *hash)
+{
+    pthread_mutex_lock(&queue_mutex);
+    for (int i = 0; i < queue_size; i++)
+    {
+        if (memcmp(request_queue[i].hash, hash, 32) == 0)
+        {
+            request_queue[i].prio = 20;
+            pthread_mutex_unlock(&queue_mutex);
+            printf("Request put in front\n");
+        }
+    }
+    pthread_mutex_unlock(&queue_mutex);
+}
+
 void *worker(void *arg)
 {
     while (1)
     {
-        // Get the next request from the queue
         request_t request = dequeue();
-
         uint64_t key = 0;
-        // Check the cache before performing brute-force search
-        if (checkCache(request.hash, &key))
-        {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
-        }
-        else
+
+        if (!checkCache(request.hash, &key))
         {
             key = bruteForceSearch(request.hash, request.start, request.end);
             if (key != 0)
             {
                 addToCache(request.hash, key);
+                checkQueue(request.hash);
             }
         }
 
-        // Send back found key to client
         key = htobe64(key);
-        write(request.client_socket, &key, 8);
-
-        // Close the client socket
+        write(request.client_socket, &key, sizeof(key));
         close(request.client_socket);
     }
     return NULL;
@@ -195,25 +211,18 @@ void *worker(void *arg)
 
 int main(int argc, char *argv[])
 {
-<<<<<<< HEAD
-    // Create socket
-=======
->>>>>>> 2789b897d473ee1fc92f172dd407c7272a54da60
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    // Make sure the port is available
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
     {
         perror("setsockopt(SO_REUSEADDR) failed");
         exit(1);
     }
 
-    // Initialize socket structure and bind the socket to the port
     struct sockaddr_in serv_addr;
     bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(atoi(argv[1]));
+    serv_addr.sin_port = htons(5000);
 
     if (bind(server_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
@@ -221,21 +230,17 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    // Listen for client connections
     listen(server_fd, 100);
 
-    // Declare client address and size
     struct sockaddr_in cli_addr;
     int cli_length = sizeof(cli_addr);
 
-    // Create worker threads
     pthread_t threads[NUM_THREADS];
     for (int i = 0; i < NUM_THREADS; i++)
     {
         pthread_create(&threads[i], NULL, worker, NULL);
     }
 
-    // Accept client connections and enqueue requests
     while (1)
     {
         int client_socket = accept(server_fd, (struct sockaddr *)&cli_addr, &cli_length);
@@ -245,29 +250,22 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        // Read in request through client socket
         char buffer[PACKET_REQUEST_SIZE];
         bzero(buffer, PACKET_REQUEST_SIZE);
         read(client_socket, buffer, PACKET_REQUEST_SIZE);
 
-        // Extract request data
         request_t request = pack(buffer, client_socket);
         uint64_t key = 0;
 
-        // Check the cache before performing brute-force search
         if (checkCache(request.hash, &key))
         {
-            // Key found in cache, no need to brute-force
-            printf("Cache hit for hash\n");
             key = htobe64(key);
-            write(request.client_socket, &key, 8);
-
-            // Close the client socket
+            write(request.client_socket, &key, sizeof(key));
             close(request.client_socket);
         }
         else
         {
-            enqueue(request); // Enqueue based on priority
+            enqueue(request);
         }
     }
 

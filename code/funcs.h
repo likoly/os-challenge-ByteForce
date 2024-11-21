@@ -1,7 +1,21 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <openssl/sha.h>
+#include <signal.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <arpa/inet.h>
 
+#include "messages.h"
 #define NUM_THREADS 7
 #define CACHE_SIZE 1000
 #define QUEUE_SIZE 1000 // Array size for the priority queue
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
 
 // Global socket variables
 int server_fd;
@@ -37,6 +51,7 @@ int checkCache(uint8_t *hash, uint64_t *key)
         {
             *key = cache[i].key;
             pthread_mutex_unlock(&cache_mutex);
+            printf("Cache hit for hash\n");
             return 1; // Hash found in the cache
         }
     }
@@ -87,4 +102,95 @@ request_t pack(char buffer[], int client_socket)
     request.end = be64toh(request.end);
     request.client_socket = client_socket;
     return request;
+}
+request_t dequeue();
+// Function to check the cache for a hash
+// void checkQueue(uint8_t *hash);
+
+// Worker thread function
+void *worker(void *arg)
+{
+    while (1)
+    {
+        request_t request = dequeue();
+        uint64_t key = 0;
+
+        if (!checkCache(request.hash, &key))
+        {
+            key = bruteForceSearch(request.hash, request.start, request.end);
+            if (key != 0)
+            {
+                addToCache(request.hash, key);
+                // checkQueue(request.hash);
+            }
+        }
+
+        key = htobe64(key);
+        write(request.client_socket, &key, sizeof(key));
+        close(request.client_socket);
+    }
+    return NULL;
+}
+
+int mainer()
+{
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+    {
+        perror("setsockopt(SO_REUSEADDR) failed");
+        exit(1);
+    }
+
+    struct sockaddr_in serv_addr;
+    bzero((char *)&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(5000);
+
+    if (bind(server_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        perror("bind failed");
+        exit(1);
+    }
+
+    listen(server_fd, 100);
+
+    struct sockaddr_in cli_addr;
+    int cli_length = sizeof(cli_addr);
+
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        pthread_create(&threads[i], NULL, worker, NULL);
+    }
+
+    while (1)
+    {
+        int client_socket = accept(server_fd, (struct sockaddr *)&cli_addr, &cli_length);
+        if (client_socket < 0)
+        {
+            perror("Accept failed");
+            exit(1);
+        }
+
+        char buffer[PACKET_REQUEST_SIZE];
+        bzero(buffer, PACKET_REQUEST_SIZE);
+        read(client_socket, buffer, PACKET_REQUEST_SIZE);
+
+        request_t request = pack(buffer, client_socket);
+        uint64_t key = 0;
+        if (checkCache(request.hash, &key))
+        {
+            key = htobe64(key);
+            write(request.client_socket, &key, sizeof(key));
+            close(request.client_socket);
+        }
+        else
+        {
+            enqueue(request);
+        }
+    }
+
+    return 0;
 }
