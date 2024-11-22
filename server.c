@@ -1,4 +1,4 @@
-#include <stdio.h>
+/#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -9,7 +9,7 @@
 #include <pthread.h>
 
 #include "code/messages.h"
-#include "cache_array.h" // Include the cache header
+#include "code/cache_array.h" // Include the cache header
 
 // NOTE: Used https://www.tutorialspoint.com/unix_sockets/client_server_model.htm to understand and build our socket logic
 
