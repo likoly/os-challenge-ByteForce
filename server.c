@@ -6,133 +6,107 @@
 #include <netinet/in.h>
 #include <openssl/sha.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "code/messages.h"
 
 // NOTE: Used https://www.tutorialspoint.com/unix_sockets/client_server_model.htm to understand and build our socket logic
 
-// Global socket variables to be used by handler.
-int server_fd;
-int client_socket;
+// Function to handle the reverse hashing process
+void* reverseHash(void *newsockfdPtr) {
 
-// CTRL+C termination / interrupt handler
-void terminationHandler(int sig) {
-    close(server_fd);
-    close(client_socket);
-    exit(0);
-}
+    // Retrieve the socket file descriptor from the pointer
+    int newsockfd = *(int*)newsockfdPtr;
+    free(newsockfdPtr); // Free the allocated memory for the socket pointer
 
-// Brute-force search function
-uint64_t bruteForceSearch(uint8_t* hash, uint64_t start, uint64_t end) {
+    // Buffer to hold the incoming request
+    uint8_t buffer[PACKET_REQUEST_SIZE];
+    read(newsockfd, buffer, PACKET_REQUEST_SIZE);
+
+    // Variables to hold the extracted request data
+    uint8_t hash[32];
+    uint64_t start;
+    uint64_t end;
+    uint8_t p;
+    memcpy(hash, buffer + PACKET_REQUEST_HASH_OFFSET, 32);
+    memcpy(&start, buffer + PACKET_REQUEST_START_OFFSET, 8);
+    memcpy(&end, buffer + PACKET_REQUEST_END_OFFSET, 8);
+    memcpy(&p, buffer + PACKET_REQUEST_PRIO_OFFSET, 1);
+
+    // Convert start and end byte order
+    start = htobe64(start);
+    end = htobe64(end);
+
+    // calculate the hash
     uint8_t calculatedHash[32];
     uint64_t key;
-    for (uint64_t i = start; i < end; i++) {
-        SHA256_CTX sha256;
-        SHA256_Init(&sha256);
-        SHA256_Update(&sha256, &i, 8);
-        SHA256_Final(calculatedHash, &sha256);
-        if (memcmp(hash, calculatedHash, 32) == 0) {
-            key = i;
-            break;
-        }
+    for (key = start; key < end; key++) {
+        SHA256((uint8_t *)&key, 8, calculatedHash);
+        if (memcmp(hash, calculatedHash, 32) == 0)
+            break; // Found the matching hash
     }
-    return key;
+
+    // Convert the key to network byte order and send it back to the client
+    key = be64toh(key);
+    write(newsockfd, &key, 8);
+
+    // Close the socket connection
+    close(newsockfd);
+    pthread_exit(NULL); // Exit the thread
 }
 
+// Main function to start the server
 int main(int argc, char *argv[]) {
 
-    // Initialize termination signal
-    signal(SIGINT, terminationHandler);
+    //Create a socket
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
-    // Create socket
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    // Make sure the port is available
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
+    // Set socket options to reuse the address
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
         exit(1);
     }
 
-    // Initialize socket structure and bind the socket to the port
+    //Initialize socket structure and bind the socket to the port
     struct sockaddr_in serv_addr;
     bzero((char *)&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(atoi(argv[1]));
 
-    if (bind(server_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("bind failed");
+    // 
+    if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("ERROR on binding");
         exit(1);
     }
 
-    // Listen for client
-    listen(server_fd, 100);
+    // Listen for client connections
+    listen(sockfd, 100);
 
-    // Declare client address and size
+    //  Declare client address and size
     struct sockaddr_in cli_addr;
-    int cli_lengt = sizeof(cli_addr);
+    int clilen = sizeof(cli_addr);
 
-    // Accept client connections as concurrent child processes
+    // Main loop to accept incoming connections
     while (1) {
 
-        // Accept and check for error
-        client_socket = accept(server_fd, (struct sockaddr *) &cli_addr, &cli_lengt);
-        if (client_socket < 0) {
-            perror("Accept failed");
+        // Accept a new client connection and check for error
+        int newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+        if (newsockfd < 0) {
+            perror("ERROR on accept");
             exit(1);
         }
 
-        // Fork off a child process and check for error
-        int pid = fork();
-        if (pid < 0) {
-            perror("Fork failed");
-            exit(1);
-        }
+        // Allocate memory for the socket file descriptor
+        int *newsockfdPtr = malloc(sizeof(int));
+        memcpy(newsockfdPtr, &newsockfd, sizeof(int));
 
-        // Child process
-        if (pid == 0) {
-
-            // Close the original socket on this process
-            close(server_fd);
-
-            // Read in request through client socket
-            char buffer[PACKET_REQUEST_SIZE];
-            bzero(buffer, PACKET_REQUEST_SIZE);
-            read(client_socket, buffer, PACKET_REQUEST_SIZE);
-
-            // Declare request components
-            uint8_t hash[32];
-            uint64_t start;
-            uint64_t end;
-            uint8_t p;
-
-            // Extract components from request
-            memcpy(hash, buffer + PACKET_REQUEST_HASH_OFFSET, 32);
-            memcpy(&start, buffer + PACKET_REQUEST_START_OFFSET, 8);
-            memcpy(&end, buffer + PACKET_REQUEST_END_OFFSET, 8);
-            memcpy(&p, buffer + PACKET_REQUEST_PRIO_OFFSET, 1);
-
-            // Convert byte order as needed
-            start = htobe64(start);
-            end = htobe64(end);
-
-            // Perform Brute-force search
-            uint64_t key = bruteForceSearch(hash, start, end);
-
-            // Send back found key to client
-            key = be64toh(key);
-            write(client_socket, &key, 8);
-
-            // Close the child process
-            close(client_socket);
-            exit(0);
-        }
-
-        // Close client socket and begin loop again
-        else {
-            close(client_socket);
-        }
+        // Create a new thread to handle the request
+        pthread_t tid;
+        pthread_create(&tid, NULL, reverseHash, newsockfdPtr); // Start the reverseHash function in a new thread
     }
 
-    return 0;
+    // Close the server socket (this line will never be reached in the current infinite loop)
+    close(sockfd);
+    return 0; // Return success
 }
