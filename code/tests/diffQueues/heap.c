@@ -15,7 +15,7 @@
 #define NUM_THREADS 7
 #define CACHE_SIZE 1000
 #define QUEUE_SIZE 1000 // Array size for the priority queue
-#define MAX_REQUESTS 500
+
 // Mutexes and condition variables
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond = PTHREAD_COND_INITIALIZER;
@@ -44,16 +44,11 @@ typedef struct
     int client_socket;
 } request_t;
 
-// Queue for storing requests
-request_t request_queue[QUEUE_SIZE];
-int queue_size = -1;
-
 // Function declarations
 int checkCache(uint8_t *hash, uint64_t *key);
 void addToCache(uint8_t *hash, uint64_t key);
 uint64_t bruteForceSearch(uint8_t *hash, uint64_t start, uint64_t end);
 request_t pack(char buffer[], int client_socket);
-
 void *worker(void *arg);
 
 int checkCache(uint8_t *hash, uint64_t *key)
@@ -115,30 +110,115 @@ request_t pack(char buffer[], int client_socket)
     return request;
 }
 
-// Worker thread function
-void *worker(void *arg)
-{
-    request_t *request = (request_t *)arg;
-    uint64_t key = 0;
+// QUEUE STARTS HERE
+request_t request_queue[QUEUE_SIZE];
+int queue_size = 0;
 
-    if (!checkCache(request->hash, &key))
+// Swap helper function
+void swap(request_t *a, request_t *b)
+{
+    request_t temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Heapify up (for insertion)
+void heapify_up(int index)
+{
+    int parent = (index - 1) / 2;
+    while (index > 0 && request_queue[index].prio > request_queue[parent].prio)
     {
-        key = bruteForceSearch(request->hash, request->start, request->end);
-        if (key != 0)
-        {
-            addToCache(request->hash, key);
-        }
+        swap(&request_queue[index], &request_queue[parent]);
+        index = parent;
+        parent = (index - 1) / 2;
+    }
+}
+
+// Heapify down (for deletion)
+void heapify_down(int index)
+{
+    int largest = index;
+    int left = 2 * index + 1;
+    int right = 2 * index + 2;
+
+    if (left < queue_size && request_queue[left].prio > request_queue[largest].prio)
+    {
+        largest = left;
+    }
+    if (right < queue_size && request_queue[right].prio > request_queue[largest].prio)
+    {
+        largest = right;
+    }
+    if (largest != index)
+    {
+        swap(&request_queue[index], &request_queue[largest]);
+        heapify_down(largest);
+    }
+}
+
+void enqueue(request_t request)
+{
+    pthread_mutex_lock(&queue_mutex);
+
+    if (queue_size < QUEUE_SIZE)
+    {
+        // Insert at the end and heapify up to maintain max-heap property
+        request_queue[queue_size] = request;
+        heapify_up(queue_size);
+        queue_size++;
     }
 
-    key = htobe64(key);
-    write(request->client_socket, &key, sizeof(key));
-    close(request->client_socket);
+    pthread_cond_signal(&queue_cond);
+    pthread_mutex_unlock(&queue_mutex);
+}
+
+request_t dequeue()
+{
+    pthread_mutex_lock(&queue_mutex);
+
+    while (queue_size == 0)
+    {
+        pthread_cond_wait(&queue_cond, &queue_mutex);
+    }
+
+    // The root of the heap is the highest-priority request
+    request_t highest_prio_request = request_queue[0];
+    request_queue[0] = request_queue[queue_size - 1];
+    queue_size--;
+
+    // Heapify down to maintain max-heap property
+    heapify_down(0);
+
+    pthread_mutex_unlock(&queue_mutex);
+    return highest_prio_request;
+}
+
+void *worker(void *arg)
+{
+    while (1)
+    {
+        request_t request = dequeue();
+        uint64_t key = 0;
+
+        if (!checkCache(request.hash, &key))
+        {
+            key = bruteForceSearch(request.hash, request.start, request.end);
+            if (key != 0)
+            {
+                addToCache(request.hash, key);
+            }
+        }
+
+        key = htobe64(key);
+        write(request.client_socket, &key, sizeof(key));
+        close(request.client_socket);
+    }
     return NULL;
 }
 
 int main(int argc, char *argv[])
 {
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
     {
         perror("setsockopt(SO_REUSEADDR) failed");
@@ -162,9 +242,11 @@ int main(int argc, char *argv[])
     struct sockaddr_in cli_addr;
     int cli_length = sizeof(cli_addr);
 
-    request_t requests[MAX_REQUESTS]; // Pre-allocated array for requests
-    pthread_t threads[MAX_REQUESTS];  // Array for thread IDs
-    int request_index = 0;
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        pthread_create(&threads[i], NULL, worker, NULL);
+    }
 
     while (1)
     {
@@ -175,37 +257,24 @@ int main(int argc, char *argv[])
             exit(1);
         }
 
-        char buffer[1024]; // Adjust size as needed
-        bzero(buffer, sizeof(buffer));
-        read(client_socket, buffer, sizeof(buffer));
+        char buffer[PACKET_REQUEST_SIZE];
+        bzero(buffer, PACKET_REQUEST_SIZE);
+        read(client_socket, buffer, PACKET_REQUEST_SIZE);
 
-        // Get the next request slot
-        request_t *request = &requests[request_index];
-        *request = pack(buffer, client_socket);
-
+        request_t request = pack(buffer, client_socket);
         uint64_t key = 0;
 
-        if (checkCache(request->hash, &key))
+        if (checkCache(request.hash, &key))
         {
             key = htobe64(key);
-            write(request->client_socket, &key, sizeof(key));
-            close(request->client_socket);
+            write(request.client_socket, &key, sizeof(key));
+            close(request.client_socket);
         }
         else
         {
-            if (pthread_create(&threads[request_index], NULL, worker, request) != 0)
-            {
-                perror("pthread_create failed");
-                close(request->client_socket);
-            }
-            else
-            {
-                pthread_detach(threads[request_index]);             // Detach the thread to avoid needing to join it
-                request_index = (request_index + 1) % MAX_REQUESTS; // Wrap around if we reach the limit
-            }
+            enqueue(request);
         }
     }
 
-    close(server_fd);
     return 0;
 }
