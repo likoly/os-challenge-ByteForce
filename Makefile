@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -g
 LDFLAGS = -lssl -lcrypto -lpthread
-TARGET = x86_64/bin/linux/server
+TARGET = server
 SRC = code/server.c
 
 all: $(TARGET)
