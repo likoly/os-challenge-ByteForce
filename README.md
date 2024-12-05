@@ -1,7 +1,6 @@
-# ByteForce
-original repo at https://github.com/likoly/os-challenge-ByteForce
-## 02159 Operating Systems
-### OS Challenge
+# ByteForce 
+### 02159 Operating Systems OS Challenge
+<sub>*original repo at https://github.com/likoly/os-challenge-ByteForce*</sub>
 ___
 ## Start
 To start running the server you need to run the following 
