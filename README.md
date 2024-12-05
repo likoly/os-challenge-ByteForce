@@ -133,7 +133,11 @@ ___
 
 <sub>*Responsible: Søren*</sub>
 
-The queue is an Array queue made from `request_t`, this let's all the requests have an index. The queue is made for requests to wait until they are first in line to be dequed. This helps target the requests with the highest priority and avoid creating a thread for each new request.
+#### Motivation: 
+We want to be able to create a priority queue, so making a queue was the first step. This should also help reduce time, as no new threads have to be created.
+
+#### Functionality:
+The queue is an Array queue made from `request_t`, this let's all the requests have an index. The queue is made for requests to wait until they are first in line to be dequed.
 
 
 #### Test:
@@ -156,6 +160,11 @@ ___
 
 <sub>*Responsible: Søren*</sub>
 
+#### Motivation: 
+Adding priority to the queue helps remove the higher weighted request and therefor lower the score.
+
+
+#### Functionality:
 The Queue priority happens in peek. It traverses the queue and chooses the request with the highest priority level and returns the index of the request to dequeue.
 
 
@@ -175,6 +184,10 @@ ___
 ## Different Priority Queues:
 <sub>*Responsible: Søren*</sub>
 
+#### Motivation: 
+Different queues take different time, so we need to find the fastest.
+
+#### Functionality:
 The structure of the queue comes at a great importance, some are faster to insert, some are faster to find the highest priority. 
 Array for example inserts instantly, but takes time to find the highest priority, and linked list finds instantly but takes time to insert. 
 
@@ -199,9 +212,10 @@ ___
 
 <sub>*Responsible: Søren*</sub>
 
-There is a 20% repetition chance of found answers being used again.
-Therefor it made sense to create an array that stores the hashes and answers that have been completed. As well as adding a cache counter for the size.
+#### Motivation: 
+There is a 20% repetition chance of found answers being used again. Therefor it made sense to create an array that stores the hashes and answers that have been completed. As well as adding a cache counter for the size.
 
+#### Functionality:
 When an answer is found the answer and hash is saved at index cache count, and the cache count is incremented.
 
 When a new request comes it gets checked if there is a matching hash. This also happens when the request is dequeued, so if the cache has been found in the time from it being enqueued to it being dequeued it will also be send immediatly.
@@ -224,6 +238,12 @@ ___
 ## Cache check for Queue:
 
 <sub>*Responsible: Søren*</sub>
+
+
+#### Motivation: 
+Removing request from queue with found answers.
+
+#### Functionality:
 
 After a request has been added to the cache, it will also compare all the hashes of the requests in queue to the hash that was solved. If a matching is found it will put the priority to 20 thereby letting it skip queue and write the answer to the socket immediatly. This happens in the `checkQueue` function.
 
@@ -435,3 +455,15 @@ We were able to conclude that the experiment led to a significant increase in co
 #### Location
 The code for this experiment can be found on the CL/expt3 branch in the server.c file.
 ___
+
+## Final server:
+For the sever we included:
+
+    * BruteForce
+    * Pthreads (7 workerthreads)
+    * Array Queue
+    * Priority in Queue
+    * Cache (storage for solved)
+    * Cache checker for queue
+    * Cache hash map
+Since they optimized the server
