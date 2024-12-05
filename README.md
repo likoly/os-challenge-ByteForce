@@ -81,6 +81,32 @@ For the tests comparing to standard:
 `os-challenge-ByteForce/tests/comparedToStandard/`
 
 ___
+
+## Branch Structure Overview
+
+The repository's branch structure is implied through the README's description of experiments and server modifications. Below is the structured overview:
+
+
+### FINAL Branch
+- Designed for deployment of the fully integrated server.
+
+
+### Experiment Branches
+- Branches dedicated to experimental implementations:
+  - **`PthreadingHeader`**:
+    - Søren's experiments are located on this branch
+  - **`Experiment_1`**:
+    - Focuses on transitioning from process-based to multi-threaded request handling (`Solution_1`).
+  - **`Experiment_2v1`**:
+    - Adds caching to the multi-threaded server (`Solution_2v1`).
+  - **`Experiment_2v2`**:
+    - Tests a hash-table-based cache as an improvement to `Solution_2v1`.
+  - **`Experiment_3`**:
+    - Implements a priority queue (max-heap) and thread pool for efficient request handling (`Solution_3`).
+  - **`CL/expt3`**:
+    - Introduces a race-condition-based shared memory system for single-hash brute forcing.
+
+___
 ## Server design: 
 #### The server uses:
 Pthread to do multiproccessing
