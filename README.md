@@ -485,7 +485,7 @@ The code for this experiment can be found on the CL/expt3 branch in the server.c
 ___
 
 ## Final server:
-For the sever we included:
+For the final sever we included:
 
     * BruteForce
     * Pthreads (7 workerthreads)
@@ -495,4 +495,4 @@ For the sever we included:
     * Cache checker for queue
     * Cache hash map
     
-Since they optimized the server
+
