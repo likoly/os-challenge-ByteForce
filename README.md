@@ -466,7 +466,7 @@ ___
 ## Race Condition Experiment:
 <sub>*Responsible: Chad Lantz S241783*</sub>
 #### the motivation
-Instead of sequentially working on brute forcing 7 different hashes at the same time my experiment was to work on just one hash splitting up the brute force algorithm amongst 6 threads. The code utilized a internal race-condition in shared memory to efficiently prevent more work from being done then necessary. Each thread is split up covering a different range of the bruteforce hash, terminating when one has reached the right answer. In order to eliminate additional overhead, I made it so that each thread contully ran and was re-assigned instead of tearing down and re-creating each thread for each hash. This Experiment also made sure to incorporate the cache that Soren built to efficiently eliminate the repeating hashes that were received.
+Instead of sequentially working on brute forcing 7 different hashes at the same time my experiment was to work on just one hash splitting up the brute force algorithm amongst 6 threads. The code utilized a internal race-condition in shared memory to efficiently prevent more work from being done then necessary. Each thread is split up covering a different range of the bruteforce hash, terminating when one has reached the right answer. In order to eliminate additional overhead, I made it so that each thread continually ran and was re-assigned instead of tearing down and re-creating each thread for each hash. This Experiment also made sure to incorporate the cache that Soren built to efficiently eliminate the repeating hashes that were received.
 #### Test:
 We tested this experiment like the others with the same configuration parameters in order to simulate the final parameters on the test.
 ### Results
@@ -479,7 +479,7 @@ We tested this experiment like the others with the same configuration parameters
 
 The results of this experiment ended up being significantly slower than the standard implementation. 
 #### Conclusion
-We were able to conclude that the experiment led to a significant increase in completion time, indicating that it is slower to handle single hashes with parallel threads with my implementation. the added complexity and potential thread contention seem to have outweighed the expected performance benefits. A potential reason for this is that one of the threads is left relatively under used, which would account for this increase in time. Another reason that the code is running so much sloweris the race condition is now working to its intended effect adding time to the compuptations.
+We were able to conclude that the experiment led to a significant increase in completion time, indicating that it is slower to handle single hashes with parallel threads with my implementation. the added complexity and potential thread contention seem to have outweighed the expected performance benefits. A potential reason for this is that one of the threads is left relatively under used, which would account for this increase in time. Another reason that the code could be running so much slower is the race condition is now working to its intended effect adding time to the compuptations.
 #### Location
 The code for this experiment can be found on the CL/expt3 branch in the server.c file.
 ___
