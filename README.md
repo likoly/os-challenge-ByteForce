@@ -93,8 +93,8 @@ The repository's branch structure is implied through the README's description of
 
 ### Experiment Branches
 - Branches dedicated to experimental implementations:
-  - **`PthreadingHeader`**:
-    - Søren's experiments are located on this branch
+  - **`TESTING7`**:
+    - Søren's experiments are located on this branch 
   - **`Experiment_1`**:
     - Focuses on transitioning from process-based to multi-threaded request handling (`Solution_1`).
   - **`Experiment_2v1`**:
