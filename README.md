@@ -417,3 +417,22 @@ The experiment provides strong evidence that adding a priority queue and a threa
 Solution_3 is our best version so far, but it doesn’t handle repeated requests yet. Our next step will combine this priority queue approach with caching from a previous experiment to make it even better.
 
 ___
+
+## Race Condition Experiment:
+<sub>*Responsible: Chad Lantz S241783*</sub>
+#### the motivation
+Instead of sequentially working on brute forcing 7 different hashes at the same time my experiment was to work on just one hash splitting up the brute force algorithm amongst 6 threads. The code utilized a internal race-condition in shared memory to efficiently prevent more work from being done then necessary. Each thread is split up covering a different range of the bruteforce hash, terminating when one has reached the right answer. In order to eliminate additional overhead, I made it so that each thread contully ran and was re-assigned instead of tearing down and re-creating each thread for each hash. This Experiment also made sure to incorporate the cache that Soren built to efficiently eliminate the repeating hashes that were received.
+#### Test:
+We tested this experiment like the others with the same configuration parameters in order to simulate the final parameters on the test.
+| Category          | Seed 1   | Seed 552012 | Seed 4440  | Seed 5216  | Average    |
+|-------------------|----------|-------------|------------|------------|------------|
+| Standard          | 22267178 | 18310734    | 24255439   | 30542156   | 23843877   |
+| Race Condition    | 71627034 | 69933786    | 73865838   | 72572456   | 71999778   |
+| Percent Increase  | %321.67  | %381.92     | %304.53    | %237.61    | %301.96    |
+#### Results
+The results of this experiment ended up being significantly slower than the standard implementation. 
+#### Conclusion
+We were able to conclude that the experiment led to a significant increase in completion time, indicating that it is slower to handle single hashes with parallel threads with my implementation. the added complexity and potential thread contention seem to have outweighed the expected performance benefits. A potential reason for this is that one of the threads is left relatively under used, which would account for this increase in time.
+#### Location
+The code for this experiment can be found on the CL/expt3 branch in the server.c file.
+___
